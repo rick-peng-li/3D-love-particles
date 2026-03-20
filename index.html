@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 爱心粒子系统 - 手势控制</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            overflow: hidden;
+            background: #000000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        #video-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 200px;
+            height: 150px;
+            border-radius: 16px;
+            overflow: hidden;
+            z-index: 10;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+        #input_video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        #output_canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+        .control-panel {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.08);
+            backdrop-filter: blur(20px);
+            border-radius: 20px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            min-width: 280px;
+        }
+        .control-title {
+            color: #fff;
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .control-title::before {
+            content: '❤️';
+            font-size: 20px;
+        }
+        .color-picker-wrapper {
+            margin-bottom: 20px;
+        }
+        .color-label {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            margin-bottom: 10px;
+            display: block;
+        }
+        .color-picker-container {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .color-option {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        .color-option:hover {
+            transform: scale(1.15);
+        }
+        .color-option.active {
+            border-color: #fff;
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+        }
+        .color-option.active::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        .status-panel {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+        }
+        .status-value {
+            color: #fff;
+            font-weight: 500;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+        .gesture-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .gesture-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4757;
+            animation: pulse 1.5s infinite;
+        }
+        .gesture-dot.active {
+            background: #2ed573;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000000;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 0.5s ease;
+        }
+        .loading-overlay.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .loading-heart {
+            font-size: 60px;
+            animation: heartbeat 1.2s ease-in-out infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            25% { transform: scale(1.1); }
+            50% { transform: scale(1); }
+            75% { transform: scale(1.15); }
+        }
+        .loading-text {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 16px;
+            letter-spacing: 2px;
+        }
+        .start-btn {
+            margin-top: 30px;
+            padding: 14px 40px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            border: none;
+            border-radius: 30px;
+            color: #fff;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 20px rgba(238, 90, 111, 0.4);
+        }
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 30px rgba(238, 90, 111, 0.6);
+        }
+        .instruction-tip {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            padding: 12px 24px;
+            border-radius: 30px;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            z-index: 10;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .particle-count-slider {
+            margin-top: 15px;
+        }
+        .slider {
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            cursor: pointer;
+            box-shadow: 0 2px 10px rgba(238, 90, 111, 0.5);
+        }
+        .slider::-moz-range-thumb {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 2px 10px rgba(238, 90, 111, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-heart">❤️</div>
+        <div class="loading-text">3D 爱心粒子系统</div>
+        <button id="start-btn" class="start-btn">开启摄像头体验</button>
+    </div>
+
+    <!-- 3D Canvas -->
+    <div id="canvas-container"></div>
+
+    <!-- Control Panel -->
+    <div class="control-panel">
+        <div class="control-title">粒子控制面板</div>
+        
+        <div class="color-picker-wrapper">
+            <label class="color-label">选择粒子颜色</label>
+            <div class="color-picker-container">
+                <div class="color-option active" data-color="#ff6b6b" style="background: linear-gradient(135deg, #ff6b6b, #ee5a6f);"></div>
+                <div class="color-option" data-color="#ff9ff3" style="background: linear-gradient(135deg, #ff9ff3, #f368e0);"></div>
+                <div class="color-option" data-color="#54a0ff" style="background: linear-gradient(135deg, #54a0ff, #2e86de);"></div>
+                <div class="color-option" data-color="#5f27cd" style="background: linear-gradient(135deg, #5f27cd, #341f97);"></div>
+                <div class="color-option" data-color="#00d2d3" style="background: linear-gradient(135deg, #00d2d3, #01a3a4);"></div>
+                <div class="color-option" data-color="#ff9f43" style="background: linear-gradient(135deg, #ff9f43, #ee5a24);"></div>
+            </div>
+        </div>
+
+        <div class="particle-count-slider">
+            <label class="color-label">粒子数量: <span id="particle-count-value">1500</span></label>
+            <input type="range" id="particle-slider" class="slider" min="500" max="3000" value="1500" step="100">
+        </div>
+
+        <div class="status-panel">
+            <div class="status-item">
+                <span>手势状态</span>
+                <span class="status-value gesture-indicator">
+                    <span class="gesture-dot" id="gesture-dot"></span>
+                    <span id="gesture-status">等待手势...</span>
+                </span>
+            </div>
+            <div class="status-item">
+                <span>手掌开合度</span>
+                <span class="status-value" id="hand-openness">0%</span>
+            </div>
+            <div class="status-item">
+                <span>粒子扩散度</span>
+                <span class="status-value" id="particle-spread">正常</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Container -->
+    <div id="video-container">
+        <video id="input_video" playsinline></video>
+        <canvas id="output_canvas"></canvas>
+    </div>
+
+    <!-- Instruction Tip -->
+    <div class="instruction-tip">
+        👋 张开手掌扩散粒子，握拳收拢粒子
+    </div>
+
+    <script>
+        // Global variables
+        let scene, camera, renderer, particles, particleGeometry, particleMaterial;
+        let particleCount = 1500;
+        let particlePositions, particleOriginalPositions, particleVelocities;
+        let targetSpread = 1;
+        let currentSpread = 1;
+        let particleColor = new THREE.Color('#ff6b6b');
+        let hands, camera_utils;
+        let isCameraRunning = false;
+        let handOpenness = 0;
+        let gestureState = 'waiting';
+
+        // Initialize Three.js scene
+        function initThreeJS() {
+            const container = document.getElementById('canvas-container');
+            
+            // Scene
+            scene = new THREE.Scene();
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 50;
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            container.appendChild(renderer.domElement);
+            
+            // Create heart-shaped particles
+            createHeartParticles();
+            
+            // Add ambient light
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            
+            // Add point light
+            const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+            pointLight.position.set(10, 10, 10);
+            scene.add(pointLight);
+            
+            // Handle window resize
+            window.addEventListener('resize', onWindowResize, false);
+            
+            // Start animation loop
+            animate();
+        }
+
+        // Create heart shape texture
+        function createHeartTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 64;
+            canvas.height = 64;
+            const ctx = canvas.getContext('2d');
+            
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            const x = 32, y = 32, size = 28;
+            ctx.moveTo(x, y + size / 4);
+            ctx.quadraticCurveTo(x, y, x + size / 4, y);
+            ctx.quadraticCurveTo(x + size / 2, y, x + size / 2, y + size / 4);
+            ctx.quadraticCurveTo(x + size / 2, y, x + size * 3 / 4, y);
+            ctx.quadraticCurveTo(x + size, y, x + size, y + size / 4);
+            ctx.quadraticCurveTo(x + size, y + size / 2, x + size * 3 / 4, y + size * 3 / 4);
+            ctx.lineTo(x, y + size);
+            ctx.lineTo(x + size / 4, y + size * 3 / 4);
+            ctx.quadraticCurveTo(x, y + size / 2, x, y + size / 4);
+            ctx.closePath();
+            ctx.fill();
+            
+            const texture = new THREE.CanvasTexture(canvas);
+            return texture;
+        }
+
+        // Create heart-shaped particles
+        function createHeartParticles() {
+            if (particles) {
+                scene.remove(particles);
+                particleGeometry.dispose();
+                particleMaterial.dispose();
+            }
+            
+            particleGeometry = new THREE.BufferGeometry();
+            particlePositions = new Float32Array(particleCount * 3);
+            particleOriginalPositions = new Float32Array(particleCount * 3);
+            particleVelocities = new Float32Array(particleCount * 3);
+            
+            const colors = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
+            
+            // Heart shape parameters
+            const scale = 0.8;
+            
+            for (let i = 0; i < particleCount; i++) {
+                // Generate heart shape using parametric equations
+                const t = (i / particleCount) * Math.PI * 2;
+                const randomFactor = 0.3 + Math.random() * 0.7;
+                
+                // Heart curve equation
+                let x = 16 * Math.pow(Math.sin(t), 3);
+                let y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+                let z = (Math.random() - 0.5) * 10;
+                
+                // Add some randomness for volume
+                x += (Math.random() - 0.5) * 8;
+                y += (Math.random() - 0.5) * 8;
+                z += (Math.random() - 0.5) * 8;
+                
+                // Scale
+                x *= scale * randomFactor;
+                y *= scale * randomFactor;
+                z *= scale;
+                
+                particlePositions[i * 3] = x;
+                particlePositions[i * 3 + 1] = y;
+                particlePositions[i * 3 + 2] = z;
+                
+                particleOriginalPositions[i * 3] = x;
+                particleOriginalPositions[i * 3 + 1] = y;
+                particleOriginalPositions[i * 3 + 2] = z;
+                
+                particleVelocities[i * 3] = (Math.random() - 0.5) * 0.02;
+                particleVelocities[i * 3 + 1] = (Math.random() - 0.5) * 0.02;
+                particleVelocities[i * 3 + 2] = (Math.random() - 0.5) * 0.02;
+                
+                // Color variation
+                const colorVariation = 0.8 + Math.random() * 0.4;
+                colors[i * 3] = particleColor.r * colorVariation;
+                colors[i * 3 + 1] = particleColor.g * colorVariation;
+                colors[i * 3 + 2] = particleColor.b * colorVariation;
+                
+                sizes[i] = 0.5 + Math.random() * 1.5;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+            particleGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            particleGeometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            // Create shader material for better performance and glow effect
+            particleMaterial = new THREE.PointsMaterial({
+                size: 1.2,
+                vertexColors: true,
+                map: createHeartTexture(),
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+            
+            particles = new THREE.Points(particleGeometry, particleMaterial);
+            scene.add(particles);
+        }
+
+        // Update particle colors
+        function updateParticleColors() {
+            if (!particleGeometry) return;
+            
+            const colors = particleGeometry.attributes.color.array;
+            for (let i = 0; i < particleCount; i++) {
+                const colorVariation = 0.8 + Math.random() * 0.4;
+                colors[i * 3] = particleColor.r * colorVariation;
+                colors[i * 3 + 1] = particleColor.g * colorVariation;
+                colors[i * 3 + 2] = particleColor.b * colorVariation;
+            }
+            particleGeometry.attributes.color.needsUpdate = true;
+        }
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            if (particles) {
+                // Smoothly interpolate current spread to target
+                currentSpread += (targetSpread - currentSpread) * 0.05;
+                
+                const positions = particleGeometry.attributes.position.array;
+                const time = Date.now() * 0.001;
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const i3 = i * 3;
+                    
+                    // Get original position
+                    const origX = particleOriginalPositions[i3];
+                    const origY = particleOriginalPositions[i3 + 1];
+                    const origZ = particleOriginalPositions[i3 + 2];
+                    
+                    // Calculate spread position
+                    const spreadFactor = currentSpread;
+                    const explosionFactor = Math.max(0, currentSpread - 1) * 2;
+                    
+                    // Add floating animation
+                    const floatX = Math.sin(time + i * 0.1) * 0.5;
+                    const floatY = Math.cos(time + i * 0.1) * 0.5;
+                    const floatZ = Math.sin(time * 0.5 + i * 0.05) * 0.3;
+                    
+                    // Update position with spread and floating
+                    positions[i3] = origX * spreadFactor + floatX + explosionFactor * particleVelocities[i3] * 100;
+                    positions[i3 + 1] = origY * spreadFactor + floatY + explosionFactor * particleVelocities[i3 + 1] * 100;
+                    positions[i3 + 2] = origZ * spreadFactor + floatZ + explosionFactor * particleVelocities[i3 + 2] * 100;
+                }
+                
+                particleGeometry.attributes.position.needsUpdate = true;
+                
+                // Rotate the entire particle system slowly
+                particles.rotation.y += 0.002;
+                particles.rotation.x = Math.sin(time * 0.3) * 0.1;
+            }
+            
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Initialize MediaPipe Hands
+        function initMediaPipe() {
+            const videoElement = document.getElementById('input_video');
+            const canvasElement = document.getElementById('output_canvas');
+            const canvasCtx = canvasElement.getContext('2d');
+            
+            hands = new Hands({locateFile: (file) => {
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+            }});
+            
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+            
+            hands.onResults((results) => {
+                canvasCtx.save();
+                canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+                canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+                
+                if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                    for (const landmarks of results.multiHandLandmarks) {
+                        drawConnectors(canvasCtx, landmarks, HAND_CONNECTIONS,
+                            {color: '#00FF00', lineWidth: 2});
+                        drawLandmarks(canvasCtx, landmarks,
+                            {color: '#FF0000', lineWidth: 1, radius: 2});
+                        
+                        // Calculate hand openness
+                        calculateHandOpenness(landmarks);
+                    }
+                    
+                    gestureState = 'detected';
+                    document.getElementById('gesture-dot').classList.add('active');
+                } else {
+                    gestureState = 'waiting';
+                    document.getElementById('gesture-dot').classList.remove('active');
+                    document.getElementById('gesture-status').textContent = '等待手势...';
+                    // Default to contracted state when no hand detected
+                    targetSpread = 0.4;
+                }
+                
+                canvasCtx.restore();
+            });
+            
+            // Initialize camera
+            const camera_utils = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({image: videoElement});
+                },
+                width: 320,
+                height: 240
+            });
+            
+            return camera_utils;
+        }
+
+        // Calculate hand openness based on finger positions
+        function calculateHandOpenness(landmarks) {
+            // Wrist position
+            const wrist = landmarks[0];
+            
+            // Finger tips (8, 12, 16, 20) and PIP joints (6, 10, 14, 18)
+            // Thumb: tip (4) and IP joint (3)
+            const fingerTips = [8, 12, 16, 20];
+            const fingerPIPs = [6, 10, 14, 18];
+            const thumbTip = 4;
+            const thumbIP = 3;
+            
+            let foldedFingers = 0;
+            let totalFingers = 5;
+            
+            // Check 4 fingers (index, middle, ring, pinky)
+            for (let i = 0; i < 4; i++) {
+                const tip = landmarks[fingerTips[i]];
+                const pip = landmarks[fingerPIPs[i]];
+                
+                // Calculate distance from tip to wrist and PIP to wrist
+                const distTipToWrist = Math.sqrt(
+                    Math.pow(tip.x - wrist.x, 2) + 
+                    Math.pow(tip.y - wrist.y, 2)
+                );
+                
+                const distPIPToWrist = Math.sqrt(
+                    Math.pow(pip.x - wrist.x, 2) + 
+                    Math.pow(pip.y - wrist.y, 2)
+                );
+                
+                // If tip is closer to wrist than PIP, finger is folded
+                if (distTipToWrist < distPIPToWrist * 1.1) {
+                    foldedFingers++;
+                }
+            }
+            
+            // Check thumb
+            const thumbTipPos = landmarks[thumbTip];
+            const thumbIPPos = landmarks[thumbIP];
+            const thumbBase = landmarks[2];
+            
+            const distThumbTipToBase = Math.sqrt(
+                Math.pow(thumbTipPos.x - thumbBase.x, 2) + 
+                Math.pow(thumbTipPos.y - thumbBase.y, 2)
+            );
+            
+            const distThumbIPToBase = Math.sqrt(
+                Math.pow(thumbIPPos.x - thumbBase.x, 2) + 
+                Math.pow(thumbIPPos.y - thumbBase.y, 2)
+            );
+            
+            if (distThumbTipToBase < distThumbIPToBase * 1.2) {
+                foldedFingers++;
+            }
+            
+            // Calculate openness based on folded fingers
+            // 5 folded = fist (openness = 0)
+            // 0 folded = open hand (openness = 1)
+            handOpenness = 1 - (foldedFingers / totalFingers);
+            
+            // Update UI
+            const opennessPercent = Math.round(handOpenness * 100);
+            document.getElementById('hand-openness').textContent = opennessPercent + '%';
+            
+            // Set gesture status text
+            if (handOpenness > 0.6) {
+                document.getElementById('gesture-status').textContent = '手掌张开';
+                document.getElementById('particle-spread').textContent = '扩散';
+            } else if (handOpenness < 0.3) {
+                document.getElementById('gesture-status').textContent = '握拳收拢';
+                document.getElementById('particle-spread').textContent = '聚合';
+            } else {
+                document.getElementById('gesture-status').textContent = '手势中...';
+                document.getElementById('particle-spread').textContent = '正常';
+            }
+            
+            // Map hand openness to particle spread
+            // Open hand (0.6-1.0) -> spread particles (2.0-3.5)
+            // Closed hand (0-0.3) -> contract particles (0.3-0.6)
+            // Use eased curve for better feel
+            const easedOpenness = Math.pow(handOpenness, 1.5);
+            targetSpread = 0.3 + easedOpenness * 3.2;
+        }
+
+        // Color picker event listeners
+        document.querySelectorAll('.color-option').forEach(option => {
+            option.addEventListener('click', function() {
+                document.querySelectorAll('.color-option').forEach(opt => opt.classList.remove('active'));
+                this.classList.add('active');
+                
+                const colorHex = this.getAttribute('data-color');
+                particleColor.set(colorHex);
+                updateParticleColors();
+            });
+        });
+
+        // Particle count slider
+        const particleSlider = document.getElementById('particle-slider');
+        const particleCountValue = document.getElementById('particle-count-value');
+        
+        particleSlider.addEventListener('input', function() {
+            particleCount = parseInt(this.value);
+            particleCountValue.textContent = particleCount;
+        });
+        
+        particleSlider.addEventListener('change', function() {
+            createHeartParticles();
+        });
+
+        // Start button
+        document.getElementById('start-btn').addEventListener('click', async function() {
+            this.textContent = '正在启动...';
+            this.disabled = true;
+            
+            try {
+                const cameraUtils = initMediaPipe();
+                await cameraUtils.start();
+                
+                document.getElementById('loading-overlay').classList.add('hidden');
+                isCameraRunning = true;
+            } catch (error) {
+                console.error('Camera initialization failed:', error);
+                this.textContent = '摄像头启动失败，请重试';
+                this.disabled = false;
+                
+                // Still allow using the app without camera
+                setTimeout(() => {
+                    document.getElementById('loading-overlay').classList.add('hidden');
+                }, 1000);
+            }
+        });
+
+        // Initialize
+        initThreeJS();
+    </script>
+</body>
+</html>
