@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 爱心粒子系统</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        }
+        
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        #three-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+        
+        #video-container {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            height: 240px;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            z-index: 10;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        #input-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1);
+        }
+        
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            min-width: 280px;
+        }
+        
+        .control-item {
+            margin-bottom: 20px;
+        }
+        
+        .control-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .control-label {
+            display: block;
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+        
+        .color-picker-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        input[type="color"] {
+            -webkit-appearance: none;
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s ease;
+        }
+        
+        input[type="color"]:hover {
+            transform: scale(1.05);
+        }
+        
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        
+        input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 12px;
+        }
+        
+        .color-value {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            font-family: 'Courier New', monospace;
+            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 16px;
+            border-radius: 8px;
+            flex: 1;
+            text-align: center;
+        }
+        
+        .slider-wrapper {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.2);
+            outline: none;
+            transition: background 0.3s ease;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff6b6b, #feca57);
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+            transition: transform 0.3s ease;
+        }
+        
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        
+        .slider-value {
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 12px;
+            text-align: right;
+        }
+        
+        #status {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 16px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #feca57;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.active {
+            background: #26de81;
+            animation: none;
+        }
+        
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+        }
+        
+        #title {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            text-align: center;
+        }
+        
+        #title h1 {
+            color: rgba(255, 255, 255, 0.95);
+            font-size: 32px;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, #fff 0%, #ffd4d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        #title p {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        
+        .instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 12px 24px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: rgba(255, 255, 255, 0.7);
+            font-size: 13px;
+            text-align: center;
+        }
+        
+        @media (max-width: 768px) {
+            #controls {
+                top: auto;
+                bottom: 100px;
+                left: 50%;
+                transform: translateX(-50%);
+                min-width: 260px;
+            }
+            
+            #video-container {
+                width: 200px;
+                height: 150px;
+                bottom: 10px;
+                right: 10px;
+            }
+            
+            #title h1 {
+                font-size: 24px;
+            }
+            
+            .instructions {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="three-canvas"></canvas>
+        
+        <div id="title">
+            <h1>✨ 3D 爱心粒子系统 ✨</h1>
+            <p>张开手掌扩散粒子，握拳收拢粒子</p>
+        </div>
+        
+        <div id="controls">
+            <div class="control-item">
+                <label class="control-label">粒子颜色</label>
+                <div class="color-picker-wrapper">
+                    <input type="color" id="colorPicker" value="#ff6b6b">
+                    <span class="color-value" id="colorValue">#ff6b6b</span>
+                </div>
+            </div>
+            
+            <div class="control-item">
+                <label class="control-label">粒子数量: <span id="particleCountValue">1000</span></label>
+                <div class="slider-wrapper">
+                    <input type="range" id="particleCount" min="200" max="3000" value="1000" step="100">
+                </div>
+            </div>
+            
+            <div class="control-item">
+                <label class="control-label">扩散程度: <span id="spreadValue">5.0</span></label>
+                <div class="slider-wrapper">
+                    <input type="range" id="spread" min="1" max="10" value="5" step="0.5">
+                </div>
+            </div>
+        </div>
+        
+        <div id="video-container">
+            <video id="input-video" playsinline></video>
+        </div>
+        
+        <div id="status">
+            <div class="status-dot" id="statusDot"></div>
+            <span id="statusText">正在初始化摄像头...</span>
+        </div>
+        
+        <div class="instructions">
+            💡 提示：请允许摄像头访问，张开手掌让粒子扩散，握拳让粒子收拢
+        </div>
+    </div>
+
+    <script>
+        // Three.js 场景设置
+        let scene, camera, renderer, particles;
+        let particleCount = 1000;
+        let particleColor = 0xff6b6b;
+        let maxSpreadFactor = 5.0;  // 最大扩散幅度（由滑块控制）
+        let handOpenness = 0.0;     // 手势张开程度 (0=完全收拢, 1=完全张开)
+        let targetOpenness = 0.0;   // 默认聚合状态
+        
+        // 爱心形状参数
+        const heartShape = (t) => {
+            const x = 16 * Math.pow(Math.sin(t), 3);
+            const y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+            return { x: x / 16, y: y / 16 };
+        };
+        
+        // 粒子随机偏移数据
+        let particleOffsets = [];
+        
+        // 初始化 Three.js 场景
+        function initThreeJS() {
+            const canvas = document.getElementById('three-canvas');
+            
+            scene = new THREE.Scene();
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 8;
+            
+            renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            
+            createParticles();
+            
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        // 创建爱心粒子
+        function createParticles() {
+            if (particles) {
+                scene.remove(particles);
+            }
+            
+            const geometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            const sizes = new Float32Array(particleCount);
+            const heartPositions = [];
+            
+            // 预生成每个粒子的固定随机偏移
+            particleOffsets = [];
+            
+            for (let i = 0; i < particleCount; i++) {
+                const t = Math.random() * Math.PI * 2;
+                const heart = heartShape(t);
+                const scale = 0.5 + Math.random() * 1.5;
+                
+                heartPositions.push({
+                    x: heart.x * scale,
+                    y: heart.y * scale,
+                    z: (Math.random() - 0.5) * 0.5
+                });
+                
+                // 保存固定的随机偏移
+                particleOffsets.push({
+                    x: (Math.random() - 0.5) * 2,
+                    y: (Math.random() - 0.5) * 2,
+                    z: (Math.random() - 0.5) * 2,
+                    phase: Math.random() * Math.PI * 2,
+                    speed: 0.5 + Math.random() * 0.5,
+                    baseSize: 0.05 + Math.random() * 0.05
+                });
+            }
+            
+            const color = new THREE.Color(particleColor);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = heartPositions[i].x;
+                positions[i * 3 + 1] = heartPositions[i].y;
+                positions[i * 3 + 2] = heartPositions[i].z;
+                
+                colors[i * 3] = color.r;
+                colors[i * 3 + 1] = color.g;
+                colors[i * 3 + 2] = color.b;
+                
+                sizes[i] = 0.05 + Math.random() * 0.05;
+            }
+            
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.12,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.9,
+                blending: THREE.AdditiveBlending,
+                sizeAttenuation: true,
+                depthWrite: false
+            });
+            
+            particles = new THREE.Points(geometry, material);
+            scene.add(particles);
+        }
+        
+        // 更新粒子颜色
+        function updateParticleColor(color) {
+            particleColor = color;
+            const colors = particles.geometry.attributes.color.array;
+            const threeColor = new THREE.Color(color);
+            
+            for (let i = 0; i < particleCount; i++) {
+                colors[i * 3] = threeColor.r;
+                colors[i * 3 + 1] = threeColor.g;
+                colors[i * 3 + 2] = threeColor.b;
+            }
+            
+            particles.geometry.attributes.color.needsUpdate = true;
+        }
+        
+        // 窗口大小调整
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        
+        // 动画循环
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            handOpenness += (targetOpenness - handOpenness) * 0.1;
+            const time = Date.now() * 0.001;
+            
+            if (particles) {
+                particles.rotation.y += 0.002;
+                particles.rotation.x = Math.sin(time * 0.5) * 0.1;
+                
+                const positions = particles.geometry.attributes.position.array;
+                const sizes = particles.geometry.attributes.size.array;
+                
+                for (let i = 0; i < particleCount; i++) {
+                    const t = (i / particleCount) * Math.PI * 2;
+                    const heart = heartShape(t);
+                    const baseScale = 1.5;
+                    // 聚合时保持基础爱心形状，扩散时根据手势程度放大
+                    const spreadScale = 1 + handOpenness * maxSpreadFactor;
+                    
+                    // 使用固定随机偏移 + 平滑的正弦波动
+                    const offset = particleOffsets[i];
+                    const wave = Math.sin(time * offset.speed + offset.phase) * 0.3;
+                    const pulse = Math.sin(time * 2 + offset.phase * 0.5) * 0.15 + 0.85;
+                    
+                    const particleOffset = {
+                        x: offset.x * handOpenness * maxSpreadFactor * 0.3 + wave * 0.2,
+                        y: offset.y * handOpenness * maxSpreadFactor * 0.3 + wave * 0.2,
+                        z: offset.z * handOpenness * maxSpreadFactor * 0.3 + wave * 0.1
+                    };
+                    
+                    positions[i * 3] = heart.x * baseScale * spreadScale + particleOffset.x;
+                    positions[i * 3 + 1] = heart.y * baseScale * spreadScale + particleOffset.y;
+                    positions[i * 3 + 2] = heart.y * 0.3 + particleOffset.z;
+                    
+                    // 粒子大小脉动效果（使用固定基础大小）
+                    sizes[i] = offset.baseSize * pulse;
+                }
+                
+                particles.geometry.attributes.position.needsUpdate = true;
+                particles.geometry.attributes.size.needsUpdate = true;
+            }
+            
+            renderer.render(scene, camera);
+        }
+        
+        // MediaPipe Hands 设置
+        function initHandTracking() {
+            const videoElement = document.getElementById('input-video');
+            
+            const hands = new Hands({
+                locateFile: (file) => {
+                    return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+                }
+            });
+            
+            hands.setOptions({
+                maxNumHands: 2,
+                modelComplexity: 1,
+                minDetectionConfidence: 0.7,
+                minTrackingConfidence: 0.5
+            });
+            
+            hands.onResults(onHandResults);
+            
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await hands.send({ image: videoElement });
+                },
+                width: 1280,
+                height: 720
+            });
+            
+            camera.start().then(() => {
+                updateStatus('摄像头已启动，等待手势...', false);
+            }).catch((err) => {
+                updateStatus('摄像头启动失败: ' + err.message, false);
+            });
+        }
+        
+        // 处理手势识别结果
+        function onHandResults(results) {
+            const statusDot = document.getElementById('statusDot');
+            
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusDot.classList.add('active');
+                updateStatus(`检测到 ${results.multiHandLandmarks.length} 只手`, true);
+                
+                let totalOpenness = 0;
+                let handCount = 0;
+                
+                for (const landmarks of results.multiHandLandmarks) {
+                    const openness = calculateHandOpenness(landmarks);
+                    totalOpenness += openness;
+                    handCount++;
+                }
+                
+                const avgOpenness = totalOpenness / handCount;
+                targetOpenness = avgOpenness;
+                
+                // 更新状态显示张开程度
+                const openPercent = Math.round(avgOpenness * 100);
+                updateStatus(`检测到 ${handCount} 只手 | 张开程度: ${openPercent}%`, true);
+                
+            } else {
+                statusDot.classList.remove('active');
+                updateStatus('未检测到手势（默认聚合状态）', false);
+                targetOpenness = 0.0;  // 未检测到手势时保持聚合状态
+            }
+        }
+        
+        // 计算手掌张开程度
+        function calculateHandOpenness(landmarks) {
+            // 使用手指弯曲程度来判断张合（更准确）
+            // 计算每根手指的指尖到指根的距离比例
+            const fingers = [
+                { tip: 4, base: 1 },   // 拇指
+                { tip: 8, base: 5 },   // 食指
+                { tip: 12, base: 9 },  // 中指
+                { tip: 16, base: 13 }, // 无名指
+                { tip: 20, base: 17 }  // 小指
+            ];
+            
+            let totalOpenness = 0;
+            
+            fingers.forEach(finger => {
+                const tip = landmarks[finger.tip];
+                const base = landmarks[finger.base];
+                const mcp = landmarks[finger.base - 1]; // MCP关节（指根关节）
+                
+                // 计算指尖到MCP关节的距离
+                const tipToMcp = getDistance(tip, mcp);
+                // 计算MCP关节到腕部的距离作为参考
+                const mcpToWrist = getDistance(mcp, landmarks[0]);
+                
+                // 归一化：距离越大表示手指越伸直（张开）
+                const fingerOpenness = Math.min(tipToMcp / (mcpToWrist * 0.8), 1);
+                totalOpenness += fingerOpenness;
+            });
+            
+            const avgOpenness = totalOpenness / fingers.length;
+            
+            // 应用平滑曲线，让握拳时更接近0，张开时更接近1
+            const smoothedOpenness = Math.pow(avgOpenness, 1.5);
+            
+            return Math.max(0, Math.min(1, smoothedOpenness));
+        }
+        
+        // 计算两点之间的距离
+        function getDistance(p1, p2) {
+            const dx = p1.x - p2.x;
+            const dy = p1.y - p2.y;
+            const dz = p1.z - p2.z;
+            return Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        
+        // 更新状态显示
+        function updateStatus(text, active) {
+            const statusText = document.getElementById('statusText');
+            statusText.textContent = text;
+        }
+        
+        // 控件事件绑定
+        function initControls() {
+            const colorPicker = document.getElementById('colorPicker');
+            const colorValue = document.getElementById('colorValue');
+            const particleCountSlider = document.getElementById('particleCount');
+            const particleCountValue = document.getElementById('particleCountValue');
+            const spreadSlider = document.getElementById('spread');
+            const spreadValue = document.getElementById('spreadValue');
+            
+            colorPicker.addEventListener('input', (e) => {
+                const color = e.target.value;
+                colorValue.textContent = color;
+                updateParticleColor(parseInt(color.replace('#', ''), 16));
+            });
+            
+            particleCountSlider.addEventListener('input', (e) => {
+                particleCount = parseInt(e.target.value);
+                particleCountValue.textContent = particleCount;
+                createParticles();
+            });
+            
+            spreadSlider.addEventListener('input', (e) => {
+                maxSpreadFactor = parseFloat(e.target.value);
+                spreadValue.textContent = maxSpreadFactor.toFixed(1);
+            });
+        }
+        
+        // 初始化应用
+        function init() {
+            initThreeJS();
+            initControls();
+            initHandTracking();
+            animate();
+        }
+        
+        // 启动应用
+        init();
+    </script>
+</body>
+</html>
